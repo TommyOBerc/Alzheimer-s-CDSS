@@ -1,125 +1,146 @@
+# IMPORTS:
 import pandas as pd
 import numpy as np
+import shap
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import (accuracy_score, precision_score, recall_score, f1_score)
 
-# 1. Performance Evaluation Logic (100 Iterations)
-accuracies = []
-precisions = []
-recalls = []
-f1_scores = []
+# 1. Data prep. :
+df_full = pd.read_excel('/content/alzheimers_disease_data.xlsx')
 
-# Load Data
-df_eval = pd.read_excel('/content/alzheimers_disease_data.xlsx')
+# Excludes the final row from evaluation to treat it as a fresh 'unseen' test case (avoids data leakage!)
+df_eval = df_full.iloc[:-1].copy()
+df_ui_library = df_full.copy()
 
-# Keep a full copy for the UI search before dropping ID columns for training
-df_ui_library = df_eval.copy()
-
-# Prepare training data
+# Removes non-clinical identifiers that shouldn't influence the model math:
 df_eval_clean = df_eval.drop(columns=["PatientID", "DoctorInCharge"])
-X_eval = df_eval_clean.drop(columns=["Diagnosis"])
-y_eval = df_eval_clean["Diagnosis"]
+X = df_eval_clean.drop(columns=["Diagnosis"])
+y = df_eval_clean["Diagnosis"]
 
+# Defines strictly modifiable pannels that patients can actually change:
+modifiable_features = [
+    'BMI', 'Smoking', 'AlcoholConsumption', 'PhysicalActivity',
+    'DietQuality', 'SleepQuality', 'SystolicBP', 'DiastolicBP',
+    'CholesterolTotal', 'CholesterolLDL', 'CholesterolHDL', 'CholesterolTriglycerides'
+]
+
+# 2. Metrics Eval. (100 Iterations)
+# Runs 100 random 80/20 train-test-splits to ensure the accuracy isn't just a "lucky" single run; guages the most accurate metrics scores:
+accuracies = []
+precisions =[]
+recalls = []
+f1_s = []
 for i in range(100):
-    X_train_f, X_test_f, y_train_f, y_test_f = train_test_split(X_eval, y_eval, test_size=0.2, random_state=i)
+    X_train_f, X_test_f, y_train_f, y_test_f = train_test_split(X, y, test_size=0.2, random_state=i)
     scaler_f = StandardScaler()
-    X_train_f_sc = scaler_f.fit_transform(X_train_f)
-    X_test_f_sc = scaler_f.transform(X_test_f)
+    X_train_sc = scaler_f.fit_transform(X_train_f)
+    X_test_sc = scaler_f.transform(X_test_f)
 
-    # Model Training with entropy and tuned hyperparameters
+    # Using Decision Tree with Entropy for high interpretability (BEST MODEL FOR ACCURACY):
     temp_model = DecisionTreeClassifier(criterion='entropy', max_depth=5, min_samples_split=26, random_state=42)
-    temp_model.fit(X_train_f_sc, y_train_f)
+    temp_model.fit(X_train_sc, y_train_f)
+    y_pred = temp_model.predict(X_test_sc)
 
-    y_pred_f = temp_model.predict(X_test_f_sc)
-    accuracies.append(accuracy_score(y_test_f, y_pred_f))
-    precisions.append(precision_score(y_test_f, y_pred_f))
-    recalls.append(recall_score(y_test_f, y_pred_f))
-    f1_scores.append(f1_score(y_test_f, y_pred_f))
+    accuracies.append(accuracy_score(y_test_f, y_pred))
+    precisions.append(precision_score(y_test_f, y_pred))
+    recalls.append(recall_score(y_test_f, y_pred))
+    f1_s.append(f1_score(y_test_f, y_pred))
 
 print("===== CDSS PERFORMANCE (DT Diagnostic Engine - 100 Iterations) ====")
 print(f"Average Accuracy : {np.mean(accuracies):.4f}")
 print(f"Average Precision: {np.mean(precisions):.4f}")
 print(f"Average Recall   : {np.mean(recalls):.4f}")
-print(f"Average F1 Score : {np.mean(f1_scores):.4f}")
+print(f"Average F1 Score : {np.mean(f1_s):.4f}")
 
-# 2. Clinical Guardrails Engine
-def get_clinical_recommendations(patient_row):
-    recommendations = []
-    if patient_row['BMI'] > 25:
-        recommendations.append(('BMI', f"{patient_row['BMI']:.2f}", "Contributes to Risk (Target < 25)"))
-    elif patient_row['BMI'] < 18.5:
-        recommendations.append(('BMI', f"{patient_row['BMI']:.2f}", "Contributes to Risk (Underweight < 18.5)"))
-    else:
-        recommendations.append(('BMI', f"{patient_row['BMI']:.2f}", "Protective Factor (Healthy Range)"))
-
-    if patient_row['Smoking'] == 1: recommendations.append(('Smoking', "Yes", "Contributes to Risk (Current Smoker)"))
-    else: recommendations.append(('Smoking', "No", "Protective Factor (Non-Smoker)"))
-
-    if patient_row['AlcoholConsumption'] > 10: recommendations.append(('Alcohol Consumption', f"{patient_row['AlcoholConsumption']:.2f}", "Contributes to Risk (Excessive > 10 units/wk)"))
-    else: recommendations.append(('Alcohol Consumption', f"{patient_row['AlcoholConsumption']:.2f}", "Protective Factor (Moderate/Low)"))
-
-    if patient_row['PhysicalActivity'] < 5: recommendations.append(('Physical Activity', f"{patient_row['PhysicalActivity']:.2f}", "Contributes to Risk (Target > 5 hrs/wk)"))
-    else: recommendations.append(('Physical Activity', f"{patient_row['PhysicalActivity']:.2f}", "Protective Factor (Active)"))
-
-    if patient_row['DietQuality'] < 4: recommendations.append(('Diet Quality', f"{patient_row['DietQuality']:.2f}", "Contributes to Risk (Poor Nutrition)"))
-    elif patient_row['DietQuality'] > 7: recommendations.append(('Diet Quality', f"{patient_row['DietQuality']:.2f}", "Protective Factor (High Quality)"))
-
-    if patient_row['SleepQuality'] < 6: recommendations.append(('Sleep Quality', f"{patient_row['SleepQuality']:.2f}", "Contributes to Risk (Poor Sleep)"))
-    else: recommendations.append(('Sleep Quality', f"{patient_row['SleepQuality']:.2f}", "Protective Factor (Good Sleep)"))
-
-    if patient_row['SystolicBP'] > 130 or patient_row['DiastolicBP'] > 80: recommendations.append(('Blood Pressure', f"{int(patient_row['SystolicBP'])}/{int(patient_row['DiastolicBP'])}", "Contributes to Risk (Hypertension)"))
-    else: recommendations.append(('Blood Pressure', f"{int(patient_row['SystolicBP'])}/{int(patient_row['DiastolicBP'])}", "Protective Factor (Healthy BP)"))
-
-    if patient_row['CholesterolTotal'] > 200: recommendations.append(('Total Cholesterol', f"{patient_row['CholesterolTotal']:.2f}", "Contributes to Risk (High > 200)"))
-    if patient_row['CholesterolLDL'] > 100: recommendations.append(('LDL Cholesterol', f"{patient_row['CholesterolLDL']:.2f}", "Contributes to Risk (Target < 100)"))
-    if patient_row['CholesterolHDL'] < 40: recommendations.append(('HDL Cholesterol', f"{patient_row['CholesterolHDL']:.2f}", "Contributes to Risk (Target > 40)"))
-
-    recommendations.sort(key=lambda x: "Risk" in x[2], reverse=True)
-    return recommendations[:5]
-
-# 3. Final Model Training for Deployment
-X_train, X_test_df, y_train, y_test = train_test_split(X_eval, y_eval, test_size=0.2, random_state=42)
+# 3. Final Model and SHAP-Based Explainer:
+# Scales and trains on the previous dataset (one w/out the last row to prevent data leak)
 scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-# Note: We fit the scaler on the full training set for the UI
-final_model = DecisionTreeClassifier(criterion='entropy', max_depth=5, min_samples_split=26, random_state=42)
-final_model.fit(X_train_scaled, y_train)
+X_scaled = scaler.fit_transform(X)
+final_dt_model = DecisionTreeClassifier(criterion='entropy', max_depth=5, min_samples_split=26, random_state=42)
+final_dt_model.fit(X_scaled, y)
 
-# --- NEW UI SECTION ---
-def run_cdss_ui():
-    print("\n" + "="*50)
-    print("      ALZHEIMER'S CDSS PATIENT SEARCH UI")
-    print("="*50)
-    
-    user_input = input("Please enter the Patient ID: ").strip()
-    
-    # Filter the original dataframe for the ID (handling both string and int types)
-    patient_query = df_ui_library[df_ui_library['PatientID'].astype(str) == user_input]
-    
-    if patient_query.empty:
-        print(f"\n[!] Error: Patient ID '{user_input}' not found in the database.")
+# Initializes SHAP explainer to interpret why the model makes specific decisions
+explainer = shap.TreeExplainer(final_dt_model)
+
+# 4. Recommendation Logic
+def get_hybrid_recommendations(patient_row, patient_scaled):
+    # Calculates SHAP values for the specific patient
+    shap_values = explainer.shap_values(patient_scaled)
+
+    # Identifies which class (Diagnosis 0 [meaning "No Alzheimer's Detected"] or 1 [meaning "Alzheimer's Detected"]) the SHAP values are referring to
+    idx_class_1 = 1 if isinstance(shap_values, list) else (0 if len(shap_values.shape) == 2 else 1)
+    patient_shap = shap_values[idx_class_1][0] if isinstance(shap_values, list) else shap_values[0, :, 1] if len(shap_values.shape)==3 else shap_values[0]
+
+    feature_impacts = []
+    for i, col in enumerate(X.columns): # NOTE: enumerate is a function that allows for the looping through a list, tuple, string, etc. while keeping track of the index of each item
+        # ACTIONABILITY FILTER: Only looks at modifiable features (Excludes things like memory loss, family history of Alzheimer's, etc.)
+        if col in modifiable_features:
+            feature_impacts.append({'feature': col, 'shap_val': patient_shap[i], 'value': patient_row[col]})
+
+    # Sorts features by the absolute strength of their influence on the diagnosis
+    top_drivers = sorted(feature_impacts, key=lambda x: abs(x['shap_val']), reverse=True)[:5]
+
+    hybrid_results = []
+    for item in top_drivers:
+        f = item['feature']
+        val = item['value']
+
+        # Clinical Guardrail Logic Check/Engine: Manually checks against medical thresholds, preventing the model from giving medically erroneous information
+        is_risk = False
+        if f == 'BMI' and (val > 25 or val < 18.5): is_risk = True
+        elif f == 'Smoking' and val == 1: is_risk = True
+        elif f == 'AlcoholConsumption' and val > 10: is_risk = True
+        elif f == 'PhysicalActivity' and val < 5: is_risk = True
+        elif f == 'DietQuality' and val < 4: is_risk = True
+        elif f == 'SleepQuality' and val < 6: is_risk = True
+        elif f == 'SystolicBP' and val > 130: is_risk = True
+        elif f == 'DiastolicBP' and val > 80: is_risk = True
+        elif f == 'CholesterolTotal' and val > 200: is_risk = True
+        elif f == 'CholesterolLDL' and val > 100: is_risk = True
+        elif f == 'CholesterolHDL' and val < 40: is_risk = True
+        elif f == 'CholesterolTriglycerides' and val > 150: is_risk = True
+
+        # Applies standardized labels based on the Guardrail check
+        label = "Contributes to Risk (Address)" if is_risk else "Protective Factor (Keep it up!)"
+        hybrid_results.append((f, f"{val:.2f}" if isinstance(val, float) else val, label))
+
+    return hybrid_results
+
+# 5. UI Function:
+def run_hybrid_ui():
+    print("\n" + "="*51)
+    print("   ALZHEIMER'S CLINICAL DESCISION SUPPORT SYSTEM")
+    print("="*51)
+    pid = input("Enter Patient ID: ").strip()
+
+    # Searches for Patient ID in the main file/library (not the one with the removed last row)
+    match = df_ui_library[df_ui_library['PatientID'].astype(str) == pid]
+
+    if match.empty:
+        print(f"Patient {pid} not found.")
     else:
-        # Prepare the single row for prediction
-        # We must drop the same columns we dropped during training
-        patient_data_only = patient_query.drop(columns=["PatientID", "DoctorInCharge", "Diagnosis"])
-        patient_scaled = scaler.transform(patient_data_only)
-        
-        # Predict
-        prediction = final_model.predict(patient_scaled)[0]
-        recs = get_clinical_recommendations(patient_query.iloc[0])
-        
-        # Format Output
-        status = "Alzheimer's Detected" if prediction == 1 else "No Alzheimer's Detected"
-        
-        print(f"\n>>> REPORT FOR PATIENT ID: {user_input}")
+        row = match.iloc[0]
+        patient_data = match.drop(columns=["PatientID", "DoctorInCharge", "Diagnosis"])
+
+        # Scales data using the same scaler fitted to training data
+        scaled = scaler.transform(patient_data)
+
+        # Generates model prediction
+        pred = final_dt_model.predict(scaled)[0]
+        status = "Alzheimer's Detected" if pred == 1 else "No Alzheimer's Detected"
+
+        # Generates hybrid recommendations (SHAP + Guardrails)
+        recs = get_hybrid_recommendations(row, scaled)
+
+        print(f"\n>>> REPORT FOR PATIENT ID: {pid}")
         print(f"CDSS Diagnosis: {status}")
         print("-" * 30)
-        print("Concerning Panels:" if prediction == 1 else "Panels to Observe:")
-        for feat, val, label in recs:
-            print(f"   - {feat}: {val} ({label})")
+        print("Top Actionable Pannels (Modifiable Factors Only):")
+        for f, v, l in recs:
+            print(f"  - {f}: {v} ({l})")
         print("-" * 30)
 
-# Run the UI
-run_cdss_ui()
+# Launches the UI
+run_hybrid_ui()
