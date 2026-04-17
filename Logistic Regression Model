@@ -1,1 +1,84 @@
+import numpy as np
+#Data Processing:
+#Fill NaN values with the mean of each column
+df = df.fillna(df.mean(numeric_only=True))
+#X is the feature set, and y is the label
+X = df.drop(['Diagnosis', 'PatientID','DoctorInCharge'], axis=1)
+y = df['Diagnosis']
 
+#Train test split
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, classification_report
+
+#Initialize lists to store scores for model
+accuracies = []
+precisions = []
+recalls = []
+f1_scores = []
+
+for i in range(100): #Create a loop for various random instances
+  X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=i)
+
+  #Scale the data- normalizes it so that metrics are not unfairly weighted
+  scaler = StandardScaler()
+  X_train_scaled = scaler.fit_transform(X_train)
+  X_test_scaled = scaler.transform(X_test)
+
+  #Initialize and train the model
+  lr_model = LogisticRegression(max_iter=10000, class_weight='balanced')
+  lr_model.fit(X_train_scaled, y_train)
+
+  #Make predictions
+  y_pred = lr_model.predict(X_test_scaled)
+
+  #Evaluate and store scores
+  accuracies.append(accuracy_score(y_test, y_pred))
+  precisions.append(precision_score(y_test, y_pred))
+  recalls.append(recall_score(y_test, y_pred))
+  f1_scores.append(f1_score(y_test, y_pred))
+
+#Calculate and print average scores
+print(f'Average Accuracy over 100 runs: {np.mean(accuracies):.4f}')
+print(f'Average Precision over 100 runs: {np.mean(precisions):.4f}')
+print(f'Average Recall over 100 runs: {np.mean(recalls):.4f}')
+print(f'Average F1 Score over 100 runs: {np.mean(f1_scores):.4f}')
+
+#Print evaluation metrics for the last run (as an example)
+print('Evaluation for random_state=99:')
+print('-------------------------------')
+print('Accuracy:', accuracy_score(y_test, y_pred))
+print('Precision:', precision_score(y_test, y_pred))
+print('Recall:', recall_score(y_test, y_pred))
+print('F1 Score:', f1_score(y_test, y_pred))
+print('Confusion Matrix:\n', confusion_matrix(y_test, y_pred))
+print('Classification Report:\n', classification_report(y_test, y_pred))
+
+#Coefficients from the last model trained
+coef_values = np.vstack([-lr_model.coef_, lr_model.coef_])
+coef = pd.DataFrame(coef_values, columns=X.columns, index=lr_model.classes_)
+print('Coefficients for the last run:')
+print('------------------------------')
+display(coef)
+
+#Used google gemini to help develop graphical display of logistic regression model
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+#Get coefficients for when Diagnosis = 1 (Alzheimer's Detected)
+#use the actual coefficient values to understand direction of influence
+coef_df_class1_signed = coef.loc[1].sort_values(key=abs, ascending=False).reset_index()
+coef_df_class1_signed.columns = ['Feature', 'Coefficient']
+
+print('Feature Importances (Signed Coefficients from Logistic Regression):')
+display(coef_df_class1_signed)
+
+#Plot feature weights with positive and negative coefficients
+plt.figure(figsize=(12, max(8, len(coef_df_class1_signed) * 0.4)))
+sns.barplot(x='Coefficient', y='Feature', data=coef_df_class1_signed, palette='coolwarm', hue='Coefficient', legend=False)
+plt.title('Feature Importances from Logistic Regression Coefficients (Signed Values)')
+plt.xlabel('Coefficient Value')
+plt.ylabel('Feature')
+plt.tight_layout()
+plt.show()
