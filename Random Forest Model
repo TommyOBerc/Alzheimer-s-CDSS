@@ -1,1 +1,112 @@
+# Lib. Imports
+import pandas as pd
+import numpy as np
+import shap
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (accuracy_score, precision_score, recall_score, f1_score, confusion_matrix)
 
+# Load Data:
+df = pd.read_excel('/content/alzheimers_disease_data.xlsx')
+
+# Drop unnecessary columns (Patient ID and Doctor In Charge b/c irrelevant to diagnosis):
+df = df.drop(columns=["PatientID", "DoctorInCharge"])
+
+# Separate features and target
+X = df.drop(columns=["Diagnosis"])
+y = df["Diagnosis"]
+
+# Metrices to store scores:
+accuracies = []
+precisions = []
+recalls = []
+f1_scores = []
+conf_matrices = []
+
+# ===============
+# MODEL EVAL LOOP
+# ===============
+
+for i in range(100):
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=i)
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    model = RandomForestClassifier()
+    model.fit(X_train_scaled, y_train)
+    y_pred = model.predict(X_test_scaled)
+    accuracies.append(accuracy_score(y_test, y_pred))
+    precisions.append(precision_score(y_test, y_pred))
+    recalls.append(recall_score(y_test, y_pred))
+    f1_scores.append(f1_score(y_test, y_pred))
+    conf_matrices.append(confusion_matrix(y_test, y_pred))
+
+print("===== Model Performance Over 100 Iterations ====")
+print("Average Accuracy :", np.mean(accuracies))
+print("Average Precision:", np.mean(precisions))
+print("Average Recall   :", np.mean(recalls))
+print("Average F1 Score :", np.mean(f1_scores))
+
+# ============================================
+# SHAP CALCULATION (ACTIONABLE LIFESTYLE ONLY)
+# ============================================
+
+# Define features that the patient can actually change
+modifiable_features = [
+    'BMI', 'Smoking', 'AlcoholConsumption', 'PhysicalActivity',
+    'DietQuality', 'SleepQuality', 'SystolicBP', 'DiastolicBP',
+    'CholesterolTotal', 'CholesterolLDL', 'CholesterolHDL', 'CholesterolTriglycerides'
+]
+
+# Get indices for these modifiable features
+modifiable_indices = [X.columns.get_loc(col) for col in modifiable_features if col in X.columns]
+
+# Re-create final split for explanation
+X_train, X_test_df, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=99)
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test_df)
+
+final_model = RandomForestClassifier()
+final_model.fit(X_train_scaled, y_train)
+
+explainer = shap.TreeExplainer(final_model)
+random_indices = np.random.choice(len(X_test_scaled), size=5, replace=False)
+
+print("\n==== ACTIONABLE RECOMMENDATIONS (Based on SHAP) ====")
+
+for idx in random_indices:
+    instance = X_test_scaled[idx].reshape(1, -1)
+    shap_values = explainer.shap_values(instance)
+
+    if isinstance(shap_values, list):
+        # Class 1 (Alzheimer's) is usually at index 1
+        shap_vals = shap_values[1][0]
+    else:
+        shap_vals = shap_values[0, :, 1] if len(shap_values.shape) == 3 else shap_values[0]
+
+    prediction = final_model.predict(instance)[0]
+
+    # Filter SHAP values to only include modifiable indices
+    modifiable_shap = {i: shap_vals[i] for i in modifiable_indices}
+
+    # Sort modifiable features by absolute SHAP impact
+    top_modifiable = sorted(modifiable_shap.items(), key=lambda x: abs(x[1]), reverse=True)[:3]
+
+    print(f"\nPatient Index: {idx}")
+    status = "Alzheimer's Detected" if prediction == 1 else "No Alzheimer's Detected"
+    print(f"Result: {status}")
+
+    if prediction == 1:
+        print("Prioritize improving these to slow progression:")
+    else:
+        print("Watch these factors to maintain your current health status:")
+
+    for f_idx, contribution in top_modifiable:
+        feature_name = X.columns[f_idx]
+        original_value = X_test_df.iloc[idx, f_idx]
+        # Positive SHAP always means 'contributes toward an Alzheimer's diagnosis'
+        # Negative SHAP always means 'protects against an Alzheimer's diagnosis'
+        impact = "Contributes to Risk" if contribution > 0 else "Protective Factor"
+        print(f"  - {feature_name}: {original_value:.2f} ({impact})")
