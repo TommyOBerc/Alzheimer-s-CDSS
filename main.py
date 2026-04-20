@@ -55,15 +55,19 @@ print(f"Average Recall   : {np.mean(recalls):.4f}")
 print(f"Average F1 Score : {np.mean(f1_s):.4f}")
 
 # 3. Final Model and SHAP-Based Explainer:
-# Scales and trains on the previous dataset (one w/out the last row to prevent data leak)
+#Create new train test split
+X_train_final, X_test_final, y_train_final, y_test_final = train_test_split(X, y, test_size=0.2, random_state=42)
+# Scales and trains on the new split- no bias from previous test
 scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
+X_train_scaled = scaler.fit_transform(X_train_final)
+X_test_scaled = scaler.transform(X_test_final)
 final_dt_model = DecisionTreeClassifier(criterion='entropy', max_depth=5, min_samples_split=26, random_state=42)
-final_dt_model.fit(X_scaled, y)
+final_dt_model.fit(X_train_scaled, y_train_final)
 
 # Initializes SHAP explainer to interpret why the model makes specific decisions
 explainer = shap.TreeExplainer(final_dt_model)
 
+# Lines 72-84, utilized AI to come up with idea/code
 # 4. Recommendation Logic
 def get_hybrid_recommendations(patient_row, patient_scaled):
     # Calculates SHAP values for the specific patient
@@ -89,38 +93,41 @@ def get_hybrid_recommendations(patient_row, patient_scaled):
 
         # Clinical Guardrail Logic Check/Engine: Manually checks against medical thresholds, preventing the model from giving medically erroneous information
         is_risk = False
-        if f == 'BMI' and (val > 25 or val < 18.5): is_risk = True
+        if f == 'BMI' and (val > 30 or val < 23): is_risk = True
         elif f == 'Smoking' and val == 1: is_risk = True
-        elif f == 'AlcoholConsumption' and val > 10: is_risk = True
-        elif f == 'PhysicalActivity' and val < 5: is_risk = True
+        elif f == 'AlcoholConsumption' and val > 14: is_risk = True
+        elif f == 'PhysicalActivity' and val < 2.5: is_risk = True
         elif f == 'DietQuality' and val < 4: is_risk = True
-        elif f == 'SleepQuality' and val < 6: is_risk = True
-        elif f == 'SystolicBP' and val > 130: is_risk = True
-        elif f == 'DiastolicBP' and val > 80: is_risk = True
+        elif f == 'SleepQuality' and val < 7: is_risk = True
+        elif f == 'SystolicBP' and (val > 130 or val < 60): is_risk = True
+        elif f == 'DiastolicBP' and (val > 80 or val < 20): is_risk = True
         elif f == 'CholesterolTotal' and val > 200: is_risk = True
         elif f == 'CholesterolLDL' and val > 100: is_risk = True
-        elif f == 'CholesterolHDL' and val < 40: is_risk = True
-        elif f == 'CholesterolTriglycerides' and val > 150: is_risk = True
+        elif f == 'CholesterolHDL' and (val > 60 or val < 40): is_risk = True
+        elif f == 'CholesterolTriglycerides' and val < 150: is_risk = True
 
         # Applies standardized labels based on the Guardrail check
         label = "Contributes to Risk (Address)" if is_risk else "Protective Factor (Keep it up!)"
         hybrid_results.append((f, f"{val:.2f}" if isinstance(val, float) else val, label))
 
     return hybrid_results
-
+#AI used to create UI function
 # 5. UI Function:
 def run_hybrid_ui():
-    print("\n" + "="*51)
-    print("   ALZHEIMER'S CLINICAL DESCISION SUPPORT SYSTEM")
-    print("="*51)
+    print("\n" + "="*50)
+    print("   ALZHEIMER'S CLINICAL DECISION SUPPORT SYSTEM")
+    print("="*50)
     pid = input("Enter Patient ID: ").strip()
-
+# Lines 125-129 utilized AI to help create failsafe
     # Searches for Patient ID in the main file/library (not the one with the removed last row)
-    match = df_ui_library[df_ui_library['PatientID'].astype(str) == pid]
+    match = df_full[df_full['PatientID'].astype(str) == pid]
 
-    if match.empty:
+    if match.empty: #Makes sure patient ID is valid
         print(f"Patient {pid} not found.")
-    else:
+    else: #If patient ID is not in the new 20% test split, comment on possible bias
+        if match.index[0] not in X_test_final.index: #Checks whether the patient ID used is in the test data
+            print("Note: This patient was used for training. Results may be biased.")
+
         row = match.iloc[0]
         patient_data = match.drop(columns=["PatientID", "DoctorInCharge", "Diagnosis"])
 
