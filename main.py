@@ -39,7 +39,7 @@ for i in range(100):
     X_test_sc = scaler_f.transform(X_test_f)
 
     # Using Decision Tree with Entropy for high interpretability (BEST MODEL FOR ACCURACY):
-    temp_model = DecisionTreeClassifier(criterion='entropy', max_depth=5, min_samples_split=26, random_state=42)
+    temp_model = DecisionTreeClassifier(criterion='entropy', max_depth=5, min_samples_split=26, random_state=i)
     temp_model.fit(X_train_sc, y_train_f)
     y_pred = temp_model.predict(X_test_sc)
 
