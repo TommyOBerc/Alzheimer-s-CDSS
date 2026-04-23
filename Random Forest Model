@@ -75,7 +75,7 @@ explainer = shap.TreeExplainer(final_model)
 random_indices = np.random.choice(len(X_test_scaled), size=5, replace=False)
 
 print("\n==== ACTIONABLE RECOMMENDATIONS (Based on SHAP) ====")
-
+# Utilized AI for implementing SHAP function into code (lines 79-99)
 for idx in random_indices:
     instance = X_test_scaled[idx].reshape(1, -1)
     shap_values = explainer.shap_values(instance)
