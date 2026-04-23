@@ -34,6 +34,7 @@ for i in range(100): #Create a loop for various random instances
   y_pred = lr_model.predict(X_test_scaled)
 
   #Evaluate and store scores
+  #Utilized Gemini to store scores in the lists (lines 38-41)
   accuracies.append(accuracy_score(y_test, y_pred))
   precisions.append(precision_score(y_test, y_pred))
   recalls.append(recall_score(y_test, y_pred))
@@ -62,7 +63,7 @@ print('Coefficients for the last run:')
 print('------------------------------')
 display(coef)
 
-#Used google gemini to help develop graphical display of logistic regression model
+#Used google gemini to help develop graphical display of logistic regression model (lines 67-85)
 import matplotlib.pyplot as plt
 import seaborn as sns
 
