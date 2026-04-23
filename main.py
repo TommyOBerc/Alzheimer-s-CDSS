@@ -57,7 +57,7 @@ print(f"Average F1 Score : {np.mean(f1_s):.4f}")
 # 3. Final Model and SHAP-Based Explainer:
 #Create new train test split
 X_train_final, X_test_final, y_train_final, y_test_final = train_test_split(X, y, test_size=0.2, random_state=42)
-# Scales and trains on the new split- no bias from previous test
+# Scales and trains on the new split to demonstrate SHAP and clinical guidrails in action
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train_final)
 X_test_scaled = scaler.transform(X_test_final)
