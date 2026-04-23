@@ -76,6 +76,7 @@ plt.show()
 y_pred = dt_model.predict(X_test_dt)
 
 #comput correlation heat map
+# Lines 79-81: Utilized AI to help generate correlation heat map
 cm = confusion_matrix(y_test_dt, y_pred)
 plt.figure(figsize=(6,5))
 sns.heatmap(cm, annot = True, fmt = 'd', cmap = 'Blues', xticklabels = ["False", "True"], yticklabels=["False", "True"])
