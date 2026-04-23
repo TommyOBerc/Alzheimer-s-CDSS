@@ -119,7 +119,6 @@ def run_hybrid_ui():
     print("   ALZHEIMER'S CLINICAL DECISION SUPPORT SYSTEM")
     print("="*50)
     pid = input("Enter Patient ID: ").strip()
-# Lines 125-129 utilized AI to help create failsafe
     # Searches for Patient ID in the main file/library (not the one with the removed last row)
     match = df_full[df_full['PatientID'].astype(str) == pid]
 
