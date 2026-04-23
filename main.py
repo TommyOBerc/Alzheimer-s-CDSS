@@ -107,6 +107,7 @@ def get_hybrid_recommendations(patient_row, patient_scaled):
         elif f == 'CholesterolTriglycerides' and val < 150: is_risk = True
 
         # Applies standardized labels based on the Guardrail check
+        # Utilized AI to help with the tuple in line 112
         label = "Contributes to Risk (Address)" if is_risk else "Protective Factor (Keep it up!)"
         hybrid_results.append((f, f"{val:.2f}" if isinstance(val, float) else val, label))
 
